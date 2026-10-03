@@ -32,7 +32,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 8432
 curl -sS http://127.0.0.1:8432/api/system/health
 ```
 
-服务订单运营接口使用 `/api/compute` 前缀，身份、角色、审计和系统接口分别位于 `/api/auth`、`/api/roles`、`/api/audit` 与 `/api/system`。
+服务订单运营接口使用 `/api/compute` 前缀，身份、角色、审计和系统接口分别位于 `/api/auth`、`/api/roles`、`/api/audit` 与 `/api/system`。暴雨等场景下的批量改期采用"先预演后确认"流程，接口位于 `/api/reschedule`：
+
+1. `POST /api/reschedule/rehearsals` 录入原定日期与候选日期范围后，系统只读分析冲突、受影响订单、可迁移资源和预计费用差异，生成带摘要与明细的报告，不改动任何生效订单；
+2. 报告在确认时限内等待两名不同权限人员（`reschedule.confirm.operations` 与 `reschedule.confirm.finance`）确认同一份报告版本，重复确认、越权确认或报告过期都会安全失败并保留原因；
+3. 第二份确认落库后，系统在同一事务内复核资源可用性并原子切换全部订单；若确认期间资源被占用或订单状态变化，则整体安全失败，确认记录与失败原因保留可查；
+4. `GET /api/reschedule/rehearsals/{id}`、`/report`、`/confirmations`、`/events`、`/result` 分别提供预演进度、报告摘要、确认记录、事件流和最终版本；服务重启时，分析中或已过期的预演会被安全终止，绝不会被当作已执行。
 
 ## 测试与编译检查
 
@@ -52,6 +57,7 @@ python -m app.cli compute-demo
 
 ```text
 app/compute/       任务模板、配额、提交、领取、回执和人工干预
+app/reschedule/    仪式订单、批量改期预演、双人确认与原子切换
 app/api/            登录、角色、审计和系统管理接口
 app/core/           时钟、安全、异常和分页能力
 app/repositories/   SQLite 查询与事务封装

@@ -293,6 +293,98 @@ CREATE TABLE IF NOT EXISTS compute_interventions (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_compute_interventions_task ON compute_interventions(task_id,id);
+
+CREATE TABLE IF NOT EXISTS ceremony_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_code TEXT NOT NULL UNIQUE,
+    ceremony_type TEXT NOT NULL CHECK(ceremony_type IN ('wedding','memorial')),
+    ceremony_date TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','rescheduled','cancelled','completed')),
+    base_fee_cents INTEGER NOT NULL DEFAULT 0 CHECK(base_fee_cents >= 0),
+    reschedule_fee_cents INTEGER NOT NULL DEFAULT 0 CHECK(reschedule_fee_cents >= 0),
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ceremony_orders_date ON ceremony_orders(ceremony_date,status);
+CREATE TABLE IF NOT EXISTS ceremony_order_resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES ceremony_orders(id) ON DELETE CASCADE,
+    resource_type TEXT NOT NULL CHECK(resource_type IN ('staff','vehicle','vendor')),
+    resource_name TEXT NOT NULL,
+    commitment_fee_cents INTEGER NOT NULL DEFAULT 0 CHECK(commitment_fee_cents >= 0),
+    created_at TEXT NOT NULL,
+    UNIQUE(order_id,resource_type,resource_name)
+);
+CREATE INDEX IF NOT EXISTS idx_ceremony_resources_name ON ceremony_order_resources(resource_name);
+CREATE TABLE IF NOT EXISTS reschedule_rehearsals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rehearsal_code TEXT NOT NULL UNIQUE,
+    source_date TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    target_date TEXT,
+    status TEXT NOT NULL DEFAULT 'analyzing' CHECK(status IN ('analyzing','awaiting_confirmation','blocked','applied','expired','failed')),
+    report_version INTEGER NOT NULL DEFAULT 0,
+    report_digest TEXT NOT NULL DEFAULT '',
+    failure_reason TEXT NOT NULL DEFAULT '',
+    request_reason TEXT NOT NULL DEFAULT '',
+    requested_by TEXT NOT NULL,
+    expires_at TEXT,
+    applied_at TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reschedule_rehearsals_status ON reschedule_rehearsals(status,created_at);
+CREATE TABLE IF NOT EXISTS reschedule_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rehearsal_id INTEGER NOT NULL REFERENCES reschedule_rehearsals(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    target_date TEXT,
+    summary_json TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    report_digest TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    UNIQUE(rehearsal_id,version)
+);
+CREATE TABLE IF NOT EXISTS reschedule_confirmations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rehearsal_id INTEGER NOT NULL REFERENCES reschedule_rehearsals(id) ON DELETE CASCADE,
+    report_version INTEGER NOT NULL,
+    report_digest TEXT NOT NULL,
+    permission_group TEXT NOT NULL CHECK(permission_group IN ('operations','finance')),
+    actor TEXT NOT NULL,
+    actor_name TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE(rehearsal_id,report_version,permission_group),
+    UNIQUE(rehearsal_id,report_version,actor)
+);
+CREATE TABLE IF NOT EXISTS reschedule_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rehearsal_id INTEGER NOT NULL REFERENCES reschedule_rehearsals(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reschedule_events_rehearsal ON reschedule_events(rehearsal_id,id);
+CREATE TABLE IF NOT EXISTS reschedule_order_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rehearsal_id INTEGER NOT NULL REFERENCES reschedule_rehearsals(id) ON DELETE CASCADE,
+    order_id INTEGER NOT NULL REFERENCES ceremony_orders(id) ON DELETE RESTRICT,
+    order_code TEXT NOT NULL,
+    from_date TEXT NOT NULL,
+    to_date TEXT NOT NULL,
+    fee_delta_cents INTEGER NOT NULL DEFAULT 0,
+    moved_resources_json TEXT NOT NULL DEFAULT '[]',
+    applied_at TEXT NOT NULL,
+    UNIQUE(rehearsal_id,order_id)
+);
 '''
 
 PERMISSIONS = [
@@ -311,6 +403,10 @@ PERMISSIONS = [
     ("announcements.write", "维护公告", "announcements", "write"),
     ("audit.read", "查看审计", "audit", "read"),
     ("jobs.run", "执行后台任务", "jobs", "run"),
+    ("reschedule.read", "查看批量改期预演", "reschedule", "read"),
+    ("reschedule.rehearse", "发起批量改期预演", "reschedule", "rehearse"),
+    ("reschedule.confirm.operations", "运营确认批量改期", "reschedule", "confirm_operations"),
+    ("reschedule.confirm.finance", "财务确认批量改期", "reschedule", "confirm_finance"),
 ]
 
 
