@@ -311,6 +311,10 @@ PERMISSIONS = [
     ("announcements.write", "维护公告", "announcements", "write"),
     ("audit.read", "查看审计", "audit", "read"),
     ("jobs.run", "执行后台任务", "jobs", "run"),
+    ("reschedule.read", "查看批量改期预演", "reschedule", "read"),
+    ("reschedule.write", "维护批量改期预演", "reschedule", "write"),
+    ("reschedule.confirm.operations", "改期运营确认", "reschedule", "confirm_operations"),
+    ("reschedule.confirm.finance", "改期财务确认", "reschedule", "confirm_finance"),
 ]
 
 
